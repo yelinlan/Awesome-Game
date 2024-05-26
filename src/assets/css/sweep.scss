@@ -1,27 +1,23 @@
 
-.sidebar_h3 {
-  text-align: left;
-  margin: 0 0 15px 0;
-}
 
 .cont_btn .paper-btn {
   margin: 0 1rem;
 }
 
 .normal_board {
-  width: 202px;
+  width: 213px;
 }
 
 .hard_board {
-  width: 402px;
+  width: 426px;
 }
 
 .crazy_board {
-  width: 802px;
+  width: 851px;
 }
 
-.hell_board{
-  width: 902px;
+.hell_board {
+  width: 957px;
 }
 
 .board {
@@ -42,9 +38,7 @@
   opacity: .8;
 }
 
-.null {
-  background: #dedede;
-}
+
 
 .number {
   background: #dedede;
@@ -52,22 +46,22 @@
 }
 
 .mine {
-  background: url('~@image/sweep/mine.png') no-repeat center center;
+  background: url('../img/sweep/mine.png') no-repeat center center;
   background-size: 100% 100%;
 }
 
 .mineNot {
-  background: url('~@image/sweep/mineNot.png') no-repeat center center;
+  background: url('../img/sweep/mineNot.png') no-repeat center center;
   background-size: 100% 100%;
 }
 
 .mineError {
-  background: url('~@image/sweep/mineError.png') no-repeat center center;
+  background: url('../img/sweep/mineError.png') no-repeat center center;
   background-size: 100% 100%;
 }
 
 .mineSuccess {
-  background: url('~@image/sweep/mineSuccess.png') no-repeat center center;
+  background: url('../img/sweep/mineSuccess.png') no-repeat center center;
   background-size: 100% 100%;
 }
 
@@ -80,7 +74,7 @@
 }
 
 .flag {
-  background: url('~@image/sweep/flag.png') no-repeat center center;
+  background: url('../img/sweep/flag.png') no-repeat center center;
   background-size: 100% 100%;
 }
 
@@ -101,7 +95,7 @@
   display: inline-block;
 }
 
-.user-date{
+.user-date {
   display: inline-block;
   padding-left: 30px;
 }

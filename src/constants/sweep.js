@@ -19,12 +19,7 @@ const level =
       type: 'difficulty',
       mode: 'hell',
       label: '地狱 (hell)'
-    },
-    // {
-    //   type: 'difficulty',
-    //   mode: 'sky',
-    //   label: '天堂 (sky)'
-    // }
+    }
   ];
 
 // 游戏难度雷以及棋盘枚举
@@ -33,7 +28,6 @@ const modeEnum = {
   hard: {boardSize: [20, 15], mineCount: 50, type: 'secondary'},
   crazy: {boardSize: [40, 20], mineCount: 150, type: 'warning'},
   hell: {boardSize: [45, 25], mineCount: 230, type: 'danger'},
-  more: {boardSize: [60, 60], mineCount: 300, type: 'more'},
 };
 
 const buttonList = [{
@@ -46,6 +40,3 @@ export {
   buttonList,
   modeEnum,
 };
-
-export default {};
-

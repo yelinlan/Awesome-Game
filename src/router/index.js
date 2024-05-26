@@ -1,22 +1,21 @@
-import Vue from 'vue';
-import Router from 'vue-router';
-
+import {createRouter, createWebHistory} from 'vue-router'
 import NotFound from "./404";
-Vue.use(Router);
-const empty = [{
-  path: "*",
-  redirect: "/sweep"
-}];
+import sweep from "@/page/sweep/sweep.vue";
 
-const routes = [
-  {
-    path: '/sweep',
-    name: 'sweep',
-    component: resolve => require(['../page/sweep'], resolve)
-  },
 
-  ...NotFound,
-  ...empty
+let routers = [
+    {path: "/sweep", component: sweep},
+    {
+        path: "/",
+        component: sweep,
+        redirect: "/sweep",
+    },
+    ...NotFound,
 ];
 
-export default new Router({ routes });
+let router = createRouter({
+    routes: routers,
+    history: createWebHistory()
+});
+
+export default router;
