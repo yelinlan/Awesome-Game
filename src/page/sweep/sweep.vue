@@ -69,7 +69,8 @@ export default {
       elapsedTimer: null, // 游戏计时器
       msg: "主人~，要加油哦！",
       startSchedule: false,
-      scheduleId: null
+      scheduleId: null,
+      neighborCache: {},
     };
   },
   created() {
@@ -78,10 +79,9 @@ export default {
     // 2.通过数据初始化棋盘
     this.initBoard();
   },
-  mounted() {
-  },
-  destroyed() {
+  beforeUnmount() {
     clearInterval(this.elapsedTimer);
+    clearInterval(this.scheduleId);
     document.onkeydown = null;
   },
   computed: {
@@ -109,7 +109,7 @@ export default {
     setInitMode() {
       const {modeEnum} = SWEEP;
       const {defaultMode} = this;
-      this.boardSize = modeEnum[defaultMode].boardSize;
+      this.boardSize = [...modeEnum[defaultMode].boardSize];
       this.mineCount = modeEnum[defaultMode].mineCount;
     },
 
@@ -120,18 +120,18 @@ export default {
      */
     gameWin() {
       const {boardData} = this;
-      boardData.map((item) => {
+      boardData.forEach((item) => {
         item.isCheck = true;
         item.isFlag = false;
-        if (item.type == "mine") {
+        if (item.type === "mine") {
           item.type = "mineSuccess";
         }
       });
-      this.msg = "喵~，主人~ 真棒~"
-      // 3.0 清楚游戏时间定时器
+      this.msg = "喵~，主人~ 真棒~";
       clearInterval(this.elapsedTimer);
-      clearInterval(this.scheduleId)
-      this.startSchedule = false
+      clearInterval(this.scheduleId);
+      this.startSchedule = false;
+      this.scheduleId = null;
       this.elapsedTimer = null;
     },
 
@@ -141,28 +141,30 @@ export default {
      * @returns {void}
      */
     initBoard() {
-      this.msg = "主人~，要加油哦！"
-      clearInterval(this.scheduleId)
-      this.startSchedule = false
-      // 1.0 初始化棋盘
+      this.msg = "主人~，要加油哦！";
+      clearInterval(this.scheduleId);
+      this.startSchedule = false;
+      this.scheduleId = null;
+      this.neighborCache = {};
+
       const [x, y] = this.boardSize;
       const afterArr = [];
       for (let i = 0; i < y; i++) {
         for (let j = 0; j < x; j++) {
-          const item = {
-            type: "init", // 设置初始属性
-            isCheck: false, // 是否点击过
-            pos: [j, i], // 格子的坐标
-            isRepeat: "not", // 是否递归过
-            isFlag: false, // 用户是否插了旗子
-          };
-          afterArr.push(item);
+          afterArr.push({
+            type: "init",
+            isCheck: false,
+            pos: [j, i],
+            isRepeat: "not",
+            isFlag: false,
+            number: 0,
+            styles: {},
+          });
         }
       }
       this.boardData = afterArr;
-      // 2.0 初始化雷
+      this.minePos = [];
       this.creatMine();
-      // 3.0 初始化游戏时间
       this.initElapsedTime();
     },
 
@@ -173,7 +175,6 @@ export default {
      */
     restartGame() {
       this.gameIsOver = false;
-      // 初始化棋盘
       this.initBoard();
     },
 
@@ -184,22 +185,20 @@ export default {
      */
     initElapsedTime() {
       const startTime = moment();
-      // 初始化时间
       clearInterval(this.elapsedTimer);
       this.elapsedTime = "00:00:00";
       this.elapsedTimer = setInterval(() => {
         const currentTime = moment();
-        const du = moment.duration(currentTime - startTime, "ms");
-        const hours = du.get("hours");
-        const mins = du.get("minutes");
-        const ss = du.get("seconds");
-        const formatDate =
-            this.PrefixInteger(hours, 2) +
-            ":" +
-            this.PrefixInteger(mins, 2) +
-            ":" +
-            this.PrefixInteger(ss, 2);
-        this.elapsedTime = formatDate;
+        const diff = currentTime.diff(startTime, "ms");
+        const duration = moment.duration(diff, "ms");
+        const hours = duration.get("hours");
+        const mins = duration.get("minutes");
+        const secs = duration.get("seconds");
+        this.elapsedTime = [
+          this.PrefixInteger(hours, 2),
+          this.PrefixInteger(mins, 2),
+          this.PrefixInteger(secs, 2),
+        ].join(":");
       }, 1000);
     },
 
@@ -214,46 +213,68 @@ export default {
     },
 
     /**
+     * 计算格子索引
+     * @param {array} pos
+     * @returns {number}
+     */
+    calcIdx([x, y]) {
+      const row = this.boardSize[0];
+      return y * row + x;
+    },
+
+    /**
+     * 获取指定位置附近的九宫格坐标
+     * @param {array} pos
+     * @returns {array}
+     */
+    requestPos([x, y]) {
+      const key = `${x},${y}`;
+      if (this.neighborCache[key]) {
+        return this.neighborCache[key];
+      }
+      const [maxX, maxY] = this.boardSize;
+      const arr = [];
+      for (let offsetY = -1; offsetY <= 1; offsetY++) {
+        for (let offsetX = -1; offsetX <= 1; offsetX++) {
+          if (offsetX === 0 && offsetY === 0) {
+            continue;
+          }
+          const nextX = x + offsetX;
+          const nextY = y + offsetY;
+          if (nextX >= 0 && nextX < maxX && nextY >= 0 && nextY < maxY) {
+            arr.push([nextX, nextY]);
+          }
+        }
+      }
+      this.neighborCache[key] = arr;
+      return arr;
+    },
+
+    /**
      * 随机生成若干雷
      * @param {void}
      * @returns {void}
      */
     creatMine() {
-      const {
-        mineCount, // 雷的数量
-        boardData, // 棋盘数据
-        boardSize: [a, b], // 随机最大值
-      } = this;
-      let i = 0;
-      // 1.0 获取不重复的随机数组
-      const randomArr = [];
-      while (i < mineCount) {
-        const ran = parseInt(Math.random() * a * b);
-        let l = randomArr.length;
-        let bool = false; // 判断重复布尔值
-        if (l) {
-          for (let n = 0; n < l; n++) {
-            // 重复则重新随机
-            if (ran == randomArr[n]) {
-              bool = true;
-              break;
-            }
-          }
-        }
-        if (!bool) {
-          randomArr.push(ran);
-          i++;
-        }
+      const {boardData, mineCount, boardSize: [width, height]} = this;
+      const total = width * height;
+      const randomSet = new Set();
+
+      while (randomSet.size < mineCount) {
+        randomSet.add(Math.floor(Math.random() * total));
       }
-      let minePos = [];
-      // 2.0 新增雷到棋盘数据
-      randomArr.map((item) => {
-        boardData[item].type = "mine";
-        // 3.0 记录雷的坐标
-        minePos.push(boardData[item].pos);
+
+      const minePos = [];
+      randomSet.forEach((index) => {
+        const item = boardData[index];
+        if (!item) {
+          return;
+        }
+        item.type = "mine";
+        minePos.push(item.pos);
       });
+
       this.minePos = minePos;
-      // 4.0 计算每个格子雷的数量
       this.calcMineForNumber();
     },
 
@@ -264,26 +285,27 @@ export default {
      */
     calcMineForNumber() {
       const {boardData, minePos} = this;
-      boardData.map((item) => {
-        let count = 0; // 记录当前格子周边雷的数量
+      const mineSet = new Set(minePos.map(([x, y]) => `${x},${y}`));
+
+      boardData.forEach((item) => {
+        if (item.type !== "init") {
+          return;
+        }
+
+        let count = 0;
         const sudoku = this.requestPos(item.pos);
-        sudoku.map((sudo) => {
-          minePos.map((mine) => {
-            // 相同则记录一次雷的数量
-            if (sudo[0] == mine[0] && sudo[1] == mine[1]) {
-              count++;
-            }
-          });
-        });
-        // 只有为初始值的时候才改变
-        if (item.type == "init") {
-          if (count == 0) {
-            item.type = "null";
-          } else {
-            item.type = "number";
-            item.number = count;
-            item.styles = this.handleInsertColors(count);
+        sudoku.forEach(([posX, posY]) => {
+          if (mineSet.has(`${posX},${posY}`)) {
+            count += 1;
           }
+        });
+
+        if (count === 0) {
+          item.type = "null";
+        } else {
+          item.type = "number";
+          item.number = count;
+          item.styles = this.handleInsertColors(count);
         }
       });
     },
@@ -294,18 +316,8 @@ export default {
      * @return {number}
      */
     insertFlag(item) {
-      this.insertOneFlag(item)
-      this.autoPick()
-    },
-
-    /**
-     * 根据坐标计算索引
-     * @param {array}
-     * @return {number}
-     */
-    calcIdx([a, b]) {
-      const row = this.boardSize[0];
-      return b * row + a;
+      this.insertOneFlag(item);
+      this.autoPick();
     },
 
     /**
@@ -315,26 +327,25 @@ export default {
      */
     clickBoard(e, item) {
       const {gameIsOver} = this;
-      // 游戏结束则不执行则返回
       if (gameIsOver) return;
-      // 如果点击格子已被插旗 则不允许执行操作 立即返回
       if (item.isFlag) return;
-      // 只执行鼠标左键按下事件
-      if (e.button != 0) return;
+      if (e.button !== 0) return;
+
       item.isCheck = true;
       switch (item.type) {
-          // 空类型棋格
         case "null":
           this.handleSpace(item.pos);
           this.autoPick();
           break;
-          // 数字类型棋格
         case "number":
           this.autoPick();
           break;
-          // 雷类型棋格
         case "mine":
-          this.gameOver({item});
+          this.gameOver({
+            notArr: [item.pos],
+          });
+          break;
+        default:
           break;
       }
     },
@@ -346,7 +357,9 @@ export default {
      */
     pickNumber(item) {
       this.tipUserSudoForPos(item);
-      document.onmouseup = () => document.onmouseup = null;
+      document.onmouseup = () => {
+        document.onmouseup = null;
+      };
     },
 
     /**
@@ -359,24 +372,23 @@ export default {
       let flagCount = 0;
       const mineArr = [];
       const flagArr = [];
-      // 1.0 计算出九宫格的数组（二维）
       const sudoku = this.requestPos(pos);
-      for (let i = 0; i < sudoku.length; i++) {
-        // 2.0 根据坐标拿到索引 拿到对应的item
-        const idx = this.calcIdx(sudoku[i]);
-        const item = boardData[idx];
-        // 4.0 记录雷的集合与旗子集合
-        if (item.type == "mine") {
-          mineArr.push(item.pos);
+
+      sudoku.forEach(([x, y]) => {
+        const cell = boardData[this.calcIdx([x, y])];
+        if (!cell) {
+          return;
         }
-        if (item.isFlag) {
-          flagCount++;
-          flagArr.push(item.pos);
+        if (cell.type === "mine") {
+          mineArr.push(cell.pos);
         }
-      }
-      // 5.0 旗子数量大于等于雷的数的时候则比较
+        if (cell.isFlag) {
+          flagCount += 1;
+          flagArr.push(cell.pos);
+        }
+      });
+
       if (flagCount >= mineNumb) {
-        // 6.0 正确则递归 错误则返回错误雷和未排雷
         const {bool, notArr, errorArr} = this.findMine({
           mineArr,
           flagArr,
@@ -395,27 +407,33 @@ export default {
      * @returns {void}
      */
     gameOver({notArr = [], errorArr = []}) {
-      // 1.0 记录游戏结束结束点击事件
       this.gameIsOver = true;
       const {boardData} = this;
-      // 2.0 游戏结束显示所有格子
-      boardData.map((item) => {
+
+      boardData.forEach((item) => {
         item.isCheck = true;
         item.isFlag = false;
       });
-      for (let i = 0; i < notArr.length; i++) {
-        const idx = this.calcIdx(notArr[i]);
-        boardData[idx].type = "mineSuccess";
-      }
-      for (let i = 0; i < errorArr.length; i++) {
-        const idx = this.calcIdx(errorArr[i]);
-        boardData[idx].type = "mineError";
-      }
-      this.msg = "喵~，主人~ 要认真一点哦~"
-      // 3.0 清楚游戏时间定时器
+
+      notArr.forEach((pos) => {
+        const idx = this.calcIdx(pos);
+        if (boardData[idx]) {
+          boardData[idx].type = "mineSuccess";
+        }
+      });
+
+      errorArr.forEach((pos) => {
+        const idx = this.calcIdx(pos);
+        if (boardData[idx]) {
+          boardData[idx].type = "mineError";
+        }
+      });
+
+      this.msg = "喵~，主人~ 要认真一点哦~";
       clearInterval(this.elapsedTimer);
-      clearInterval(this.scheduleId)
-      this.startSchedule = false
+      clearInterval(this.scheduleId);
+      this.startSchedule = false;
+      this.scheduleId = null;
       this.elapsedTimer = null;
     },
 
@@ -425,37 +443,39 @@ export default {
      * @return {object}
      */
     findMine({flagArr, mineArr}) {
-      const {boardData} = this;
+      const flagSet = new Set(flagArr.map(([x, y]) => `${x},${y}`));
+      const mineSet = new Set(mineArr.map(([x, y]) => `${x},${y}`));
+
+      if (flagSet.size === mineSet.size && [...flagSet].every((key) => mineSet.has(key))) {
+        return {bool: true};
+      }
+
       const notArr = [];
       const errorArr = [];
-      // 排雷正确则返回 错误则返回坐标集合
-      if (JSON.stringify(flagArr) == JSON.stringify(mineArr)) {
-        return {
-          bool: true,
-        };
-      } else {
-        for (let i = 0; i < flagArr.length; i++) {
-          const flagPos = flagArr[i];
-          for (let j = 0; j < mineArr.length; j++) {
-            const minePos = mineArr[j];
-            // 1.0 旗子所在棋格没有雷则记录错误雷坐标
-            const falg = boardData[this.calcIdx(flagPos)];
-            if (falg.type != "mine") {
-              errorArr.push(flagPos);
-            }
-            // 2.0 雷的坐标如果没有旗子 则记录未插旗
-            const mine = boardData[this.calcIdx(minePos)];
-            if (mine.isFlag) {
-              notArr.push(minePos);
-            }
-          }
+
+      flagArr.forEach((flagPos) => {
+        const key = `${flagPos[0]},${flagPos[1]}`;
+        const cell = this.boardData[this.calcIdx(flagPos)];
+        if (cell && cell.type !== "mine") {
+          errorArr.push(flagPos);
         }
-        return {
-          bool: false,
-          notArr,
-          errorArr,
-        };
-      }
+        if (!mineSet.has(key)) {
+          errorArr.push(flagPos);
+        }
+      });
+
+      mineArr.forEach((minePos) => {
+        const key = `${minePos[0]},${minePos[1]}`;
+        if (!flagSet.has(key)) {
+          notArr.push(minePos);
+        }
+      });
+
+      return {
+        bool: false,
+        notArr,
+        errorArr,
+      };
     },
 
     /**
@@ -463,62 +483,45 @@ export default {
      * @param {array}
      * @returns {void}
      */
-    handleSpace(arr) {
+    handleSpace(startPos) {
       const {boardData} = this;
-      // 1.0 计算出九宫格的数组（二维）
-      const sudoku = this.requestPos(arr);
-      for (let i = 0; i < sudoku.length; i++) {
-        // 2.0 根据坐标拿到索引 拿到对应的item
-        const idx = this.calcIdx(sudoku[i]);
-        const item = boardData[idx];
-        // 3.0 根据索引找到的item为undefined则跳过
-        if (item == undefined) {
+      const queue = [startPos];
+      const visited = new Set();
+
+      while (queue.length > 0) {
+        const currentPos = queue.shift();
+        const key = `${currentPos[0]},${currentPos[1]}`;
+        if (visited.has(key)) {
           continue;
         }
-        // 4.0 判断是否已经递归过
-        if (item.isRepeat === "not") {
-          item.isRepeat = "is";
-          // 5.0 不为雷的时候才让其显示
-          if (item.type !== "mine") {
-            item.isCheck = true;
-            item.isFlag = false;
-          }
-          // 6.0 如果为数字则跳出当前轮循环
-          if (item.type === "number") {
-            continue;
-          }
-          // 7.0 如果为空白格则向外扩散递归
-          if (item.type === "null") {
-            this.handleSpace(item.pos);
-          }
+        visited.add(key);
+
+        const item = boardData[this.calcIdx(currentPos)];
+        if (!item || item.type === "mine") {
+          continue;
+        }
+
+        if (!item.isCheck) {
+          item.isCheck = true;
+          item.isFlag = false;
+        }
+
+        if (item.type === "number") {
+          continue;
+        }
+
+        if (item.type === "null") {
+          this.requestPos(currentPos).forEach(([nextX, nextY]) => {
+            const neighbor = boardData[this.calcIdx([nextX, nextY])];
+            if (!neighbor || neighbor.type === "mine") {
+              return;
+            }
+            if (!neighbor.isCheck) {
+              queue.push([nextX, nextY]);
+            }
+          });
         }
       }
-    },
-
-    /**
-     * 传入坐标返回九宫格的二维数组
-     * @param {array}
-     * @return {array}
-     */
-    requestPos([x, y]) {
-      const [maxX, maxY] = this.boardSize;
-      const arr = [
-        // 获取九宫格数据
-        [x - 1, y - 1], // 左上
-        [x, y - 1], // 中上
-        [x + 1, y - 1], // 右上
-        [x - 1, y], // 中左
-        [x + 1, y], // 中右
-        [x - 1, y + 1], // 左下
-        [x, y + 1], // 中下
-        [x + 1, y + 1], // 右下
-      ];
-      // 1.0 过滤掉边界外的坐标
-      const filterArr = arr.filter(
-          ([posX, posY]) =>
-              !(posX < 0 || posY < 0 || posX >= maxX || posY >= maxY)
-      );
-      return filterArr;
     },
 
     /**
@@ -526,16 +529,12 @@ export default {
      * @param {object}
      * @returns {void}
      */
-    pickDifficulty({mode, label}) {
+    pickDifficulty({mode}) {
       const {modeEnum} = SWEEP;
-      // 游戏配置重新开始参数
       this.gameIsOver = false;
       this.defaultMode = mode;
-
-      // 通过枚举设置棋盘属性
-      this.boardSize = modeEnum[mode].boardSize;
+      this.boardSize = [...modeEnum[mode].boardSize];
       this.mineCount = modeEnum[mode].mineCount;
-      const type = modeEnum[mode].type;
       this.initBoard();
     },
 
@@ -545,38 +544,20 @@ export default {
      * @return {object}
      */
     handleInsertColors(i) {
-      let obj = {};
-      switch (i) {
-        case 1:
-          obj.color = "rgb(226, 172, 172)";
-          break;
-        case 2:
-          obj.color = "rgb(187, 134, 115)";
-          break;
-        case 3:
-          obj.color = "rgb(221, 203, 144)";
-          break;
-        case 4:
-          obj.color = "rgb(196, 206, 152)";
-          break;
-        case 5:
-          obj.color = "rgb(113, 173, 116)";
-          break;
-        case 6:
-          obj.color = "rgb(105, 189, 185)";
-          break;
-        case 7:
-          obj.color = "rgb(107, 122, 155)";
-          break;
-        case 8:
-          obj.color = "rgb(155, 94, 145)";
-          break;
-        case 9:
-          obj.color = "rgb(192, 87, 101)";
-          break;
-      }
-      return obj;
+      const colorMap = {
+        1: "rgb(226, 172, 172)",
+        2: "rgb(187, 134, 115)",
+        3: "rgb(221, 203, 144)",
+        4: "rgb(196, 206, 152)",
+        5: "rgb(113, 173, 116)",
+        6: "rgb(105, 189, 185)",
+        7: "rgb(107, 122, 155)",
+        8: "rgb(155, 94, 145)",
+        9: "rgb(192, 87, 101)",
+      };
+      return {color: colorMap[i] || "rgb(226, 172, 172)"};
     },
+
     /**
      * 自动点击
      * @param {void}
@@ -584,10 +565,10 @@ export default {
      */
     autoPick() {
       const {boardData} = this;
-      boardData.map((item) => {
-        if (item.type === "number" && item.isCheck === true && item.isFlag === false) {
-          this.pickNumber(item)
-          this.autoMark(item)
+      boardData.forEach((item) => {
+        if (item.type === "number" && item.isCheck && !item.isFlag) {
+          this.pickNumber(item);
+          this.autoMark(item);
         }
       });
     },
@@ -598,21 +579,21 @@ export default {
      * @returns {void}
      */
     autoMark(item) {
-      if (item.type == "number") {
-        var m = this.calcNumber(item.pos)
-        if (item.number == m.length) {
-          m.map((i) => {
-            if (!i.isFlag) {
-              //加自动插旗定时器
-              if (!this.startSchedule) {
-                console.log("创自动插旗定时器")
-                this.scheduleId = setInterval(() => this.insertFlag(i), 100)
-                this.startSchedule = true
-              }
-              this.insertOneFlag(i)
-            }
-          });
-        }
+      if (item.type !== "number") {
+        return;
+      }
+
+      const hiddenNeighbors = this.calcNumber(item.pos).filter((cell) => !cell.isFlag && !cell.isCheck);
+      if (hiddenNeighbors.length === 0) {
+        return;
+      }
+
+      if (item.number === hiddenNeighbors.length) {
+        hiddenNeighbors.forEach((cell) => {
+          if (!cell.isCheck && !cell.isFlag) {
+            this.insertOneFlag(cell);
+          }
+        });
       }
     },
 
@@ -623,19 +604,20 @@ export default {
      */
     insertOneFlag(item) {
       const {boardData, mineCount} = this;
-      // 已经被点击过的盒子 不能插旗子
       if (item.isCheck) {
         item.isFlag = false;
         return;
       }
+
       item.isFlag = !item.isFlag;
-      // 检查是否取得胜利
+
       const correctFlag = boardData.reduce((c, i) => {
         if (i.isFlag && i.type === "mine") {
           return c + 1;
         }
         return c;
       }, 0);
+
       if (correctFlag === mineCount) {
         this.gameWin();
       }
@@ -647,17 +629,18 @@ export default {
      * @returns {void}
      */
     calcNumber(pos) {
-      const m = [];
       const {boardData} = this;
-      this.requestPos(pos).map((p) => {
-        const mine = boardData[this.calcIdx(p)];
-        if (!mine.isCheck) {
-          m.push(mine)
+      const nodes = [];
+
+      this.requestPos(pos).forEach((p) => {
+        const cell = boardData[this.calcIdx(p)];
+        if (cell && !cell.isCheck) {
+          nodes.push(cell);
         }
       });
-      return m;
-    },
 
+      return nodes;
+    },
   },
 };
 </script>
